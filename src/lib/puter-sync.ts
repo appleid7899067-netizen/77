@@ -10,6 +10,8 @@ export type CloudSnapshot = {
   enabledConnectorIds: string[];
   enabledSkillIds: string[];
   customSkills: CustomSkill[];
+  aiProvider?: "puter" | "xai";
+  puterModel?: string;
 };
 
 function clipText(text: string, max = 4_000) {
@@ -41,6 +43,8 @@ export function snapshotWorkspace(): CloudSnapshot {
     enabledConnectorIds: state.enabledConnectorIds,
     enabledSkillIds: state.enabledSkillIds,
     customSkills: state.customSkills,
+    aiProvider: state.aiProvider,
+    puterModel: state.puterModel,
   };
 }
 
@@ -76,5 +80,7 @@ export function applyWorkspace(snap: CloudSnapshot) {
     enabledConnectorIds: snap.enabledConnectorIds,
     enabledSkillIds: snap.enabledSkillIds,
     customSkills: snap.customSkills,
+    aiProvider: snap.aiProvider ?? "puter",
+    puterModel: snap.puterModel ?? "gemma-4-26b-a4b-it",
   });
 }

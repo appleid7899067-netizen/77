@@ -1,0 +1,107 @@
+import { loadPuter, puterErrorMessage, type PuterSDK } from "@/lib/puter";
+
+export type PuterModel = {
+  id: string;
+  provider: string;
+  name?: string;
+  context?: number;
+  max_tokens?: number;
+  cost?: { input?: number; output?: number; tokens?: number; currency?: string };
+  costs?: { prompt_tokens?: number; completion_tokens?: number; input?: number; output?: number };
+};
+
+export type PuterChatMessage = {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+};
+
+function getCost(model: PuterModel): { input: number; output: number } | null {
+  const cost = model.cost;
+  if (cost) return { input: Number(cost.input ?? NaN), output: Number(cost.output ?? NaN) };
+  const costs = model.costs;
+  if (costs) {
+    return {
+      input: Number(costs.input ?? costs.prompt_tokens ?? NaN),
+      output: Number(costs.output ?? costs.completion_tokens ?? NaN),
+    };
+  }
+  return null;
+}
+
+export function isFreePuterModel(model: PuterModel): boolean {
+  const cost = getCost(model);
+  return cost !== null && cost.input === 0 && cost.output === 0;
+}
+
+export function modelLabel(model: PuterModel): string {
+  return model.name && model.name !== model.id ? `${model.name} · ${model.provider}` : `${model.id} · ${model.provider}`;
+}
+
+export async function listFreePuterModels(): Promise<PuterModel[]> {
+  const puter = await loadPuter();
+  const response = await puter.ai.listModels();
+  const models = (Array.isArray(response) ? response : (response as { models?: unknown[] }).models ?? []) as PuterModel[];
+  return models
+    .filter(isFreePuterModel)
+    .sort((a, b) => modelLabel(a).localeCompare(modelLabel(b)))
+    .slice(0, 80);
+}
+
+function contentText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((part) => (typeof part === "string" ? part : typeof part?.text === "string" ? part.text : ""))
+      .join("");
+  }
+  if (value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string") {
+    return (value as { text: string }).text;
+  }
+  return "";
+}
+
+export async function chatWithPuter(options: {
+  messages: PuterChatMessage[];
+  model?: string;
+  onDelta?: (text: string) => void;
+}): Promise<{ text: string; model: string }> {
+  const puter = await loadPuter();
+  const model = options.model || PUTER_FREE_MODEL_FALLBACK;
+  const response = await puter.ai.chat(options.messages, {
+    model,
+    stream: Boolean(options.onDelta),
+    normalize: true,
+    temperature: 0.4,
+  });
+
+  let text = "";
+  if (response && typeof (response as AsyncIterable<unknown>)[Symbol.asyncIterator] === "function") {
+    for await (const chunk of response as AsyncIterable<unknown>) {
+      const delta = contentText((chunk as { text?: unknown; delta?: unknown; message?: { content?: unknown } }).text)
+        || contentText((chunk as { delta?: unknown }).delta)
+        || contentText((chunk as { message?: { content?: unknown } }).message?.content);
+      if (delta) {
+        text += delta;
+        options.onDelta?.(delta);
+      }
+    }
+  } else {
+    const body = response as { message?: { content?: unknown }; text?: unknown };
+    text = contentText(body.message?.content) || contentText(body.text) || contentText(response);
+    if (text) options.onDelta?.(text);
+  }
+  if (!text.trim()) throw new Error("Puter returned an empty response.");
+  return { text: text.trim(), model };
+}
+
+export function puterAiErrorMessage(error: unknown): string {
+  return puterErrorMessage(error) || "Puter AI could not answer. Try another free model.";
+}
+
+export type PuterAIReady = PuterSDK["ai"];
+
+export function isPuterAIReady(puter: PuterSDK | null): boolean {
+  return Boolean(puter?.ai?.chat);
+}
+
+export const PUTER_FREE_MODEL_FALLBACK = "gemma-4-26b-a4b-it";

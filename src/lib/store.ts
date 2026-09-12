@@ -35,6 +35,8 @@ export type WorkspaceSlice = {
   enabledConnectorIds: string[];
   enabledSkillIds: string[];
   customSkills: CustomSkill[];
+  aiProvider: "puter" | "xai";
+  puterModel: string;
 };
 
 type LumenState = WorkspaceSlice & {
@@ -51,6 +53,8 @@ type LumenState = WorkspaceSlice & {
   toggleSkill: (id: string) => void;
   addCustomSkill: (skill: Omit<CustomSkill, "id">) => CustomSkill;
   removeCustomSkill: (id: string) => void;
+  setAiProvider: (provider: "puter" | "xai") => void;
+  setPuterModel: (model: string) => void;
   replaceWorkspace: (slice: WorkspaceSlice) => void;
 };
 
@@ -76,6 +80,8 @@ export const useLumenStore = create<LumenState>()(
       enabledConnectorIds: [],
       enabledSkillIds: defaultSkillIds,
       customSkills: [],
+      aiProvider: "puter",
+      puterModel: "gemma-4-26b-a4b-it",
       markHydrated: () => set({ hydrated: true }),
       newConversation: () => {
         const convo = blankConversation();
@@ -157,6 +163,8 @@ export const useLumenStore = create<LumenState>()(
         set((state) => ({
           customSkills: state.customSkills.filter((s) => s.id !== id),
         })),
+      setAiProvider: (aiProvider) => set({ aiProvider }),
+      setPuterModel: (puterModel) => set({ puterModel }),
       replaceWorkspace: (slice) =>
         set({
           conversations: slice.conversations,
@@ -164,6 +172,8 @@ export const useLumenStore = create<LumenState>()(
           enabledConnectorIds: slice.enabledConnectorIds,
           enabledSkillIds: slice.enabledSkillIds,
           customSkills: slice.customSkills,
+          aiProvider: slice.aiProvider ?? "puter",
+          puterModel: slice.puterModel ?? "gemma-4-26b-a4b-it",
         }),
     }),
     {
@@ -174,6 +184,8 @@ export const useLumenStore = create<LumenState>()(
         enabledConnectorIds: state.enabledConnectorIds,
         enabledSkillIds: state.enabledSkillIds,
         customSkills: state.customSkills,
+        aiProvider: state.aiProvider,
+        puterModel: state.puterModel,
       }),
       onRehydrateStorage: () => (state) => {
         state?.markHydrated();

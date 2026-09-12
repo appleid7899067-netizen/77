@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { redirectToLoginIfRequired } from "@/lib/app-data";
 import { sendChat } from "@/lib/agent/functions";
 import type { AttachedFile } from "@/lib/agent/types";
+import { chatWithPuter, puterAiErrorMessage } from "@/lib/puter-ai";
 import { useLumenStore } from "@/lib/store";
 import { uid } from "@/lib/utils";
 import { ChatThread } from "@/components/chat-thread";
@@ -10,6 +11,7 @@ import { PluginsDialog } from "@/components/plugins-dialog";
 import { MobileTopBar, SidebarBody } from "@/components/sidebar";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ModelPicker } from "@/components/model-picker";
 
 export function Workspace() {
   const hydrated = useLumenStore((s) => s.hydrated);
@@ -20,6 +22,10 @@ export function Workspace() {
   const enabledConnectorIds = useLumenStore((s) => s.enabledConnectorIds);
   const enabledSkillIds = useLumenStore((s) => s.enabledSkillIds);
   const customSkills = useLumenStore((s) => s.customSkills);
+  const aiProvider = useLumenStore((s) => s.aiProvider);
+  const puterModel = useLumenStore((s) => s.puterModel);
+  const setAiProvider = useLumenStore((s) => s.setAiProvider);
+  const setPuterModel = useLumenStore((s) => s.setPuterModel);
 
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
@@ -59,6 +65,33 @@ export function Workspace() {
         .filter((m) => m.role === "user" || m.role === "assistant")
         .slice(-16)
         .map((m) => ({ role: m.role, content: m.content }));
+      if (aiProvider === "puter") {
+        const fileContext = files.length
+          ? `\n\nAttached files:\n${files
+              .map((file) => `FILE ${file.name} (${file.mimeType}, ${file.size} bytes)\n${file.text}`)
+              .join("\n\n---\n\n")}`
+          : "";
+        const result = await chatWithPuter({
+          model: puterModel,
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a precise workspace AI. Answer in clear prose. Use the attached file text as source material and never claim to have accessed a file that is not included.",
+            },
+            ...history.slice(0, -1),
+            { role: "user", content: `${text}${fileContext}` },
+          ],
+        });
+        appendMessage(id, {
+          id: uid("msg"),
+          role: "assistant",
+          content: result.text,
+          createdAt: Date.now(),
+          traces: [{ name: `Puter · ${result.model}`, summary: "free model", ok: true }],
+        });
+        return;
+      }
       const result = await sendChat({
         data: {
           messages: history,
@@ -88,10 +121,11 @@ export function Workspace() {
         traces: result.traces.length ? result.traces : undefined,
       });
     } catch (err) {
+      const message = aiProvider === "puter" ? puterAiErrorMessage(err) : err instanceof Error ? err.message : "Something went wrong.";
       appendMessage(id, {
         id: uid("msg"),
         role: "assistant",
-        content: err instanceof Error ? err.message : "Something went wrong.",
+        content: message,
         createdAt: Date.now(),
       });
     } finally {
@@ -146,6 +180,14 @@ export function Workspace() {
               ) : null}
             </div>
           ) : null}
+          <div className="mx-auto w-full max-w-3xl px-4 pb-2">
+            <ModelPicker
+              provider={aiProvider}
+              model={puterModel}
+              onProviderChange={setAiProvider}
+              onModelChange={setPuterModel}
+            />
+          </div>
           <Composer disabled={pending} onSend={(text, files) => void send(text, files)} onOpenPlugins={() => setPluginsOpen(true)} />
         </main>
         <PluginsDialog open={pluginsOpen} onOpenChange={setPluginsOpen} />

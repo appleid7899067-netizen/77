@@ -21,9 +21,21 @@ type PuterKvApi = {
   del: (key: string) => Promise<boolean | unknown>;
 };
 
+type PuterAIChat = (
+  prompt: string | Array<{ role: string; content: string }>,
+  options?: Record<string, unknown>,
+) => Promise<unknown>;
+
+type PuterAI = {
+  chat: PuterAIChat;
+  listModels: (provider?: string | null) => Promise<unknown[]>;
+  listModelProviders?: () => Promise<string[]>;
+};
+
 export type PuterSDK = {
   auth: PuterAuthApi;
   kv?: PuterKvApi;
+  ai: PuterAI;
 };
 
 declare global {
