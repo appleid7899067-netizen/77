@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { redirectToLoginIfRequired } from "@/lib/app-data";
 import { sendChat } from "@/lib/agent/functions";
 import type { AttachedFile } from "@/lib/agent/types";
+import { runBossesAgent } from "@/lib/bosses-agent";
 import { chatWithPuter, puterAiErrorMessage } from "@/lib/puter-ai";
 import { useLumenStore } from "@/lib/store";
 import { uid } from "@/lib/utils";
@@ -40,6 +41,7 @@ export function Workspace() {
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [pending, setPending] = useState(false);
+  const [agentMode, setAgentMode] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [loginUrl, setLoginUrl] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -82,25 +84,32 @@ export function Workspace() {
               .map((file) => `FILE ${file.name} (${file.mimeType}, ${file.size} bytes)\n${file.text}`)
               .join("\n\n---\n\n")}`
           : "";
-        const result = await chatWithPuter({
-          model: puterModel,
-          files,
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are the workspace AI. Use the selected Puter model. Use attached files as authoritative source material. When a Puter file reference is available, inspect it directly; the inline file text is compatibility context. Never invent access to files that were not attached. For code, reason carefully and provide complete, production-ready solutions.\n\n" + BOSSES_CREDENTIAL_POLICY.trim(),
-            },
-            ...history.slice(0, -1),
-            { role: "user", content: `${text || "Analyze the attached files and help me."}${fileContext}` },
-          ],
-        });
+        const messages = [
+          {
+            role: "system" as const,
+            content:
+              "You are the workspace AI. Use the selected Puter model. Use attached files as authoritative source material. When a Puter file reference is available, inspect it directly; the inline file text is compatibility context. Never invent access to files that were not attached. For code, reason carefully and provide complete, production-ready solutions.\n\n" + BOSSES_CREDENTIAL_POLICY.trim(),
+          },
+          ...history.slice(0, -1),
+          { role: "user" as const, content: `${text || "Analyze the attached files and help me."}${fileContext}` },
+        ];
+        const result = agentMode
+          ? await runBossesAgent({ model: puterModel, files, messages, maxIterations: 3 })
+          : await chatWithPuter({ model: puterModel, files, messages });
         appendMessage(id, {
           id: uid("msg"),
           role: "assistant",
           content: result.text,
           createdAt: Date.now(),
-          traces: [{ name: `Puter · ${result.model}`, summary: "selected free model · file refs + inline context · Bosses safety policy", ok: true }],
+          traces: [
+            {
+              name: `Puter · ${result.model}`,
+              summary: agentMode
+                ? "Bosses Plan → Act → Observe → Refine · selected model · file refs + inline context"
+                : "selected free model · file refs + inline context · Bosses safety policy",
+              ok: true,
+            },
+          ],
         });
         return;
       }
@@ -193,13 +202,26 @@ export function Workspace() {
               ) : null}
             </div>
           ) : null}
-          <div className="mx-auto w-full max-w-3xl px-4 pb-2">
+          <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-4 pb-2">
             <ModelPicker
               provider={aiProvider}
               model={puterModel}
               onProviderChange={setAiProvider}
               onModelChange={setPuterModel}
             />
+            {aiProvider === "puter" ? (
+              <button
+                type="button"
+                aria-pressed={agentMode}
+                onClick={() => setAgentMode((value) => !value)}
+                className={`shrink-0 rounded-md border px-3 py-2 text-xs font-medium transition ${
+                  agentMode ? "border-foreground bg-foreground text-background" : "border-border bg-background text-foreground"
+                }`}
+                title="Use Bosses Plan → Act → Observe → Refine with the selected Puter model"
+              >
+                Agent {agentMode ? "ON" : "OFF"}
+              </button>
+            ) : null}
           </div>
           <Composer disabled={pending} onSend={(text, files) => void send(text, files)} onOpenPlugins={() => setPluginsOpen(true)} />
         </main>
