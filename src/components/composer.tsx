@@ -1,12 +1,15 @@
 import { useRef, useState } from "react";
 import { ArrowUp, Paperclip, Puzzle, X } from "lucide-react";
-import { FILE_ACCEPT, extractAttachedFiles } from "@/lib/files";
+import { FILE_ACCEPT, MAX_FILE_BYTES, extractAttachedFiles } from "@/lib/files";
+import { loadPuter } from "@/lib/puter";
 import type { AttachedFile } from "@/lib/agent/types";
 import { APP_SHORT_NAME } from "@/lib/brand";
 import { formatBytes } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+
+const MAX_FILES = 10;
 
 export function Composer({
   disabled,
@@ -21,6 +24,7 @@ export function Composer({
   const [files, setFiles] = useState<AttachedFile[]>([]);
   const [parsing, setParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -40,10 +44,27 @@ export function Composer({
     setParsing(true);
     setError(null);
     try {
-      const extracted = await extractAttachedFiles(Array.from(list));
-      setFiles((prev) => [...prev, ...extracted].slice(0, 6));
+      const picked = Array.from(list).slice(0, MAX_FILES);
+      const tooLarge = picked.find((file) => file.size > MAX_FILE_BYTES);
+      if (tooLarge) throw new Error(`${tooLarge.name} is larger than 50 MB.`);
+
+      const puter = await loadPuter();
+      if (!puter.fs?.upload) throw new Error("Puter file storage is not available.");
+
+      const uploaded = await Promise.all(
+        picked.map(async (file) => {
+          const result = await puter.fs!.upload([file], undefined, { dedupeName: true });
+          return Array.isArray(result) ? result[0] : result;
+        }),
+      );
+      const extracted = await extractAttachedFiles(picked);
+      const withPaths = extracted.map((file, index) => ({
+        ...file,
+        puterPath: uploaded[index]?.path,
+      }));
+      setFiles((prev) => [...prev, ...withPaths].slice(0, MAX_FILES));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not read that file.");
+      setError(err instanceof Error ? err.message : "Could not upload that file.");
     } finally {
       setParsing(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -57,13 +78,27 @@ export function Composer({
         className={cn(
           "rounded-[28px] border border-border bg-card p-3 shadow-[var(--shadow-soft)]",
           "focus-within:ring-1 focus-within:ring-ring/40",
+          dragging && "ring-2 ring-primary/40",
         )}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDragLeave={(e) => {
+          if (e.currentTarget === e.target) setDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          void onPick(e.dataTransfer.files);
+        }}
       >
         {files.length > 0 ? (
           <div className="mb-2 flex flex-wrap gap-2">
             {files.map((file) => (
               <span
-                key={file.name + file.size}
+                key={file.name + file.size + file.puterPath}
                 className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary px-3 py-1 text-xs"
               >
                 <span className="max-w-[160px] truncate">{file.name}</span>
@@ -117,6 +152,7 @@ export function Composer({
             onClick={() => fileRef.current?.click()}
             disabled={disabled || parsing}
             aria-label="Attach files"
+            title="Attach any file up to 50 MB"
           >
             <Paperclip className="size-4" />
           </Button>
@@ -131,7 +167,7 @@ export function Composer({
             <Puzzle className="size-4" />
           </Button>
           <span className="flex-1 text-xs text-subtle">
-            {parsing ? "Reading files…" : files.length ? `${files.length} attached` : ""}
+            {parsing ? "Uploading files…" : files.length ? `${files.length} attached · max 50 MB each` : ""}
           </span>
           <Button
             type="button"
