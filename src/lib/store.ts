@@ -81,7 +81,7 @@ export const useLumenStore = create<LumenState>()(
       enabledSkillIds: defaultSkillIds,
       customSkills: [],
       aiProvider: "puter",
-      puterModel: "gemma-4-26b-a4b-it",
+      puterModel: "",
       markHydrated: () => set({ hydrated: true }),
       newConversation: () => {
         const convo = blankConversation();
@@ -95,8 +95,7 @@ export const useLumenStore = create<LumenState>()(
       deleteConversation: (id) =>
         set((state) => {
           const conversations = state.conversations.filter((c) => c.id !== id);
-          const activeId =
-            state.activeId === id ? (conversations[0]?.id ?? null) : state.activeId;
+          const activeId = state.activeId === id ? (conversations[0]?.id ?? null) : state.activeId;
           return { conversations, activeId };
         }),
       appendMessage: (conversationId, message) =>
@@ -106,10 +105,7 @@ export const useLumenStore = create<LumenState>()(
               ? {
                   ...c,
                   updatedAt: Date.now(),
-                  title:
-                    c.messages.length === 0 && message.role === "user"
-                      ? message.content.slice(0, 48) || c.title
-                      : c.title,
+                  title: c.messages.length === 0 && message.role === "user" ? message.content.slice(0, 48) || c.title : c.title,
                   messages: [...c.messages, message],
                 }
               : c,
@@ -119,19 +115,13 @@ export const useLumenStore = create<LumenState>()(
         set((state) => ({
           conversations: state.conversations.map((c) =>
             c.id === conversationId
-              ? {
-                  ...c,
-                  updatedAt: Date.now(),
-                  messages: c.messages.map((m) => (m.id === messageId ? { ...m, ...patch } : m)),
-                }
+              ? { ...c, updatedAt: Date.now(), messages: c.messages.map((m) => (m.id === messageId ? { ...m, ...patch } : m)) }
               : c,
           ),
         })),
       renameConversation: (conversationId, title) =>
         set((state) => ({
-          conversations: state.conversations.map((c) =>
-            c.id === conversationId ? { ...c, title, updatedAt: Date.now() } : c,
-          ),
+          conversations: state.conversations.map((c) => (c.id === conversationId ? { ...c, title, updatedAt: Date.now() } : c)),
         })),
       toggleConnector: (id) =>
         set((state) => ({
@@ -159,10 +149,7 @@ export const useLumenStore = create<LumenState>()(
         set((state) => ({ customSkills: [created, ...state.customSkills] }));
         return created;
       },
-      removeCustomSkill: (id) =>
-        set((state) => ({
-          customSkills: state.customSkills.filter((s) => s.id !== id),
-        })),
+      removeCustomSkill: (id) => set((state) => ({ customSkills: state.customSkills.filter((s) => s.id !== id) })),
       setAiProvider: (aiProvider) => set({ aiProvider }),
       setPuterModel: (puterModel) => set({ puterModel }),
       replaceWorkspace: (slice) =>
@@ -173,7 +160,7 @@ export const useLumenStore = create<LumenState>()(
           enabledSkillIds: slice.enabledSkillIds,
           customSkills: slice.customSkills,
           aiProvider: slice.aiProvider ?? "puter",
-          puterModel: slice.puterModel ?? "gemma-4-26b-a4b-it",
+          puterModel: slice.puterModel ?? "",
         }),
     }),
     {
