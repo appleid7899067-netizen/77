@@ -81,6 +81,6 @@ export function applyWorkspace(snap: CloudSnapshot) {
     enabledSkillIds: snap.enabledSkillIds,
     customSkills: snap.customSkills,
     aiProvider: snap.aiProvider ?? "puter",
-    puterModel: snap.puterModel ?? "gemma-4-26b-a4b-it",
+    puterModel: snap.puterModel ?? "",
   });
 }
