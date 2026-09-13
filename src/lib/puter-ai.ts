@@ -191,13 +191,10 @@ export async function chatWithPuter(options: {
 
     if (!toolCalls.length || !tools?.length) break;
 
+    const assistantContent = contentText(body.message?.content);
     currentMessages = [
       ...currentMessages,
-      {
-        role: "assistant",
-        content: body.message?.content ? body.message.content : "",
-        tool_calls: toolCalls,
-      },
+      { role: "assistant", content: assistantContent, tool_calls: toolCalls },
     ];
 
     for (const call of toolCalls) {
