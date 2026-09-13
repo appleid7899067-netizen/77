@@ -73,11 +73,12 @@ export function Workspace() {
           : "";
         const result = await chatWithPuter({
           model: puterModel,
+          files,
           messages: [
             {
               role: "system",
               content:
-                "You are a precise workspace AI. Answer in clear prose. Use the attached file text as source material and never claim to have accessed a file that is not included.",
+                "You are a precise workspace AI. Answer in clear prose. Use attached files as source material. You may inspect file attachments supplied through Puter and should never claim to have accessed a file that was not attached.",
             },
             ...history.slice(0, -1),
             { role: "user", content: `${text}${fileContext}` },
