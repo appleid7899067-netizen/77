@@ -1,9 +1,9 @@
 import JSZip from "jszip";
 import type { AttachedFile } from "@/lib/agent/types";
 
-const MAX_FILE_BYTES = 2 * 1024 * 1024;
+export const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const MAX_TEXT_CHARS = 14_000;
-const MAX_FILES = 6;
+const MAX_FILES = 10;
 
 function clip(text: string, max = MAX_TEXT_CHARS): string {
   const trimmed = text.replace(/\u0000/g, "").trim();
@@ -66,16 +66,14 @@ function extractPdfText(buffer: ArrayBuffer): string {
   const streams = raw.match(/BT[\s\S]{0,4000}?ET/g) ?? [];
   for (const stream of streams) {
     const tj = stream.match(/\((?:\\.|[^\\)])+\)\s*Tj/g) ?? [];
-    for (const token of tj) {
-      parts.push(token.slice(1, token.lastIndexOf(")")));
-    }
+    for (const token of tj) parts.push(token.slice(1, token.lastIndexOf(")")));
   }
   return clip(parts.join(" "));
 }
 
 export async function extractAttachedFile(file: File): Promise<AttachedFile> {
   if (file.size > MAX_FILE_BYTES) {
-    throw new Error(`${file.name} is larger than 2 MB`);
+    throw new Error(`${file.name} is larger than 50 MB`);
   }
   const name = file.name;
   const mimeType = file.type || "application/octet-stream";
@@ -86,7 +84,21 @@ export async function extractAttachedFile(file: File): Promise<AttachedFile> {
     lower.endsWith(".md") ||
     lower.endsWith(".json") ||
     lower.endsWith(".csv") ||
-    lower.endsWith(".html")
+    lower.endsWith(".html") ||
+    lower.endsWith(".xml") ||
+    lower.endsWith(".js") ||
+    lower.endsWith(".ts") ||
+    lower.endsWith(".tsx") ||
+    lower.endsWith(".jsx") ||
+    lower.endsWith(".css") ||
+    lower.endsWith(".sql") ||
+    lower.endsWith(".py") ||
+    lower.endsWith(".java") ||
+    lower.endsWith(".go") ||
+    lower.endsWith(".rs") ||
+    lower.endsWith(".sh") ||
+    lower.endsWith(".yaml") ||
+    lower.endsWith(".yml")
   ) {
     return { name, mimeType, size: file.size, text: clip(await file.text()) };
   }
@@ -108,34 +120,24 @@ export async function extractAttachedFile(file: File): Promise<AttachedFile> {
     return { name, mimeType, size: file.size, text: clip(chunks.join("\n\n")) };
   }
   if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
-    const text = await extractZipText(file, [
-      "xl/sharedStrings.xml",
-      "xl/worksheets/sheet1.xml",
-    ]);
+    const text = await extractZipText(file, ["xl/sharedStrings.xml", "xl/worksheets/sheet1.xml"]);
     return { name, mimeType, size: file.size, text: clip(text) };
   }
   if (lower.endsWith(".pdf") || mimeType === "application/pdf") {
     const text = extractPdfText(await file.arrayBuffer());
-    return {
-      name,
-      mimeType,
-      size: file.size,
-      text: text || "[PDF parsed, but no extractable text was found]",
-    };
+    return { name, mimeType, size: file.size, text: text || "[PDF uploaded; no local text extractor found]" };
   }
 
   return {
     name,
     mimeType,
     size: file.size,
-    text: `[binary file ${name}; ${mimeType}; no text extractor for this type]`,
+    text: `[binary file ${name}; ${mimeType}; uploaded to Puter for model access]`,
   };
 }
 
 export async function extractAttachedFiles(files: File[]): Promise<AttachedFile[]> {
-  const slice = files.slice(0, MAX_FILES);
-  return Promise.all(slice.map(extractAttachedFile));
+  return Promise.all(files.slice(0, MAX_FILES).map(extractAttachedFile));
 }
 
-export const FILE_ACCEPT =
-  ".txt,.md,.json,.csv,.html,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx";
+export const FILE_ACCEPT = "*/*";
