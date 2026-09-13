@@ -23,6 +23,9 @@ export type PuterChatMessage = {
   content: PuterChatContent;
 };
 
+const MAX_HISTORY_MESSAGES = 48;
+const DEFAULT_MAX_OUTPUT_TOKENS = 16_384;
+
 function getCost(model: PuterModel): { input: number; output: number } | null {
   const cost = model.cost;
   if (cost) return { input: Number(cost.input ?? NaN), output: Number(cost.output ?? NaN) };
@@ -42,7 +45,11 @@ export function isFreePuterModel(model: PuterModel): boolean {
 }
 
 export function modelLabel(model: PuterModel): string {
-  return model.name && model.name !== model.id ? `${model.name} · ${model.provider}` : `${model.id} · ${model.provider}`;
+  const limits = [model.context ? `ctx ${model.context.toLocaleString()}` : "", model.max_tokens ? `out ${model.max_tokens.toLocaleString()}` : ""]
+    .filter(Boolean)
+    .join(" · ");
+  const base = model.name && model.name !== model.id ? `${model.name} · ${model.provider}` : `${model.id} · ${model.provider}`;
+  return limits ? `${base} · ${limits}` : base;
 }
 
 export async function listFreePuterModels(): Promise<PuterModel[]> {
@@ -51,8 +58,20 @@ export async function listFreePuterModels(): Promise<PuterModel[]> {
   const models = (Array.isArray(response) ? response : (response as { models?: unknown[] }).models ?? []) as PuterModel[];
   return models
     .filter(isFreePuterModel)
-    .sort((a, b) => modelLabel(a).localeCompare(modelLabel(b)))
+    .sort((a, b) => {
+      const contextDelta = (b.context ?? 0) - (a.context ?? 0);
+      return contextDelta || modelLabel(a).localeCompare(modelLabel(b));
+    })
     .slice(0, 80);
+}
+
+async function selectedModelInfo(modelId: string): Promise<PuterModel | undefined> {
+  try {
+    const models = await listFreePuterModels();
+    return models.find((item) => item.id === modelId);
+  } catch {
+    return undefined;
+  }
 }
 
 function contentText(value: unknown): string {
@@ -75,14 +94,17 @@ export async function chatWithPuter(options: {
   onDelta?: (text: string) => void;
 }): Promise<{ text: string; model: string }> {
   const puter = await loadPuter();
-  const model = options.model || PUTER_FREE_MODEL_FALLBACK;
-  const messages = options.messages.map((message) => ({ ...message }));
+  const requestedModel = options.model || PUTER_FREE_MODEL_FALLBACK;
+  const modelInfo = await selectedModelInfo(requestedModel);
+  const model = modelInfo?.id || requestedModel;
+  const messages = options.messages.slice(-MAX_HISTORY_MESSAGES).map((message) => ({ ...message }));
   const files = (options.files ?? []).filter((file) => file.puterPath);
+
   if (files.length) {
     const lastUserIndex = [...messages].map((m) => m.role).lastIndexOf("user");
     if (lastUserIndex >= 0) {
       const last = messages[lastUserIndex];
-      const text = typeof last.content === "string" ? last.content : "Analyze the attached files.";
+      const text = typeof last.content === "string" ? last.content : "Analyze the attached files and answer the user's request.";
       messages[lastUserIndex] = {
         ...last,
         content: [
@@ -93,12 +115,28 @@ export async function chatWithPuter(options: {
     }
   }
 
-  const response = await puter.ai.chat(messages, {
+  const maxTokens = Math.min(modelInfo?.max_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_MAX_OUTPUT_TOKENS);
+  const aiOptions: Record<string, unknown> = {
     model,
     stream: Boolean(options.onDelta),
     normalize: true,
-    temperature: 0.4,
-  });
+    temperature: 0.2,
+    max_tokens: maxTokens,
+  };
+
+  let response: unknown;
+  try {
+    response = await puter.ai.chat(messages, aiOptions);
+  } catch (firstError) {
+    // Some Puter model adapters reject optional generation-limit parameters.
+    // Retry the same selected model without max_tokens rather than switching models.
+    try {
+      const { max_tokens: _ignored, ...compatibleOptions } = aiOptions;
+      response = await puter.ai.chat(messages, compatibleOptions);
+    } catch {
+      throw firstError;
+    }
+  }
 
   let text = "";
   if (response && typeof (response as AsyncIterable<unknown>)[Symbol.asyncIterator] === "function") {
@@ -116,6 +154,7 @@ export async function chatWithPuter(options: {
     text = contentText(body.message?.content) || contentText(body.text) || contentText(response);
     if (text) options.onDelta?.(text);
   }
+
   if (!text.trim()) throw new Error("Puter returned an empty response.");
   return { text: text.trim(), model };
 }
