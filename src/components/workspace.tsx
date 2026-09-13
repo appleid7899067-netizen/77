@@ -13,6 +13,16 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ModelPicker } from "@/components/model-picker";
 
+const BOSSES_CREDENTIAL_POLICY = `
+Credential safety policy:
+- Treat API keys, access tokens, OAuth tokens, JWTs, passwords, private keys, database URLs with passwords, webhook secrets, cookies, session tokens, and service-account JSON as sensitive.
+- Never ask the user to paste a secret into ordinary chat when a secure connection or environment-secret path can be used.
+- Never repeat, summarize, log, store, or place a user-provided secret into code, prompts, model context, browser storage, or analytics.
+- Never invent credentials and never claim a credential was installed, connected, tested, or used unless a real tool result confirms it.
+- If a credential is missing, preserve the current task and state exactly which service, operation, and secure connection field is required.
+- Public repository names, project IDs, account IDs, and service IDs are not secrets.
+`;
+
 export function Workspace() {
   const hydrated = useLumenStore((s) => s.hydrated);
   const conversations = useLumenStore((s) => s.conversations);
@@ -79,7 +89,7 @@ export function Workspace() {
             {
               role: "system",
               content:
-                "You are the workspace AI. Use the selected Puter model. Use attached files as authoritative source material. When a Puter file reference is available, inspect it directly; the inline file text is compatibility context. Never invent access to files that were not attached. For code, reason carefully and provide complete, production-ready solutions.",
+                "You are the workspace AI. Use the selected Puter model. Use attached files as authoritative source material. When a Puter file reference is available, inspect it directly; the inline file text is compatibility context. Never invent access to files that were not attached. For code, reason carefully and provide complete, production-ready solutions.\n\n" + BOSSES_CREDENTIAL_POLICY.trim(),
             },
             ...history.slice(0, -1),
             { role: "user", content: `${text || "Analyze the attached files and help me."}${fileContext}` },
@@ -90,7 +100,7 @@ export function Workspace() {
           role: "assistant",
           content: result.text,
           createdAt: Date.now(),
-          traces: [{ name: `Puter · ${result.model}`, summary: "selected free model · file refs + inline context", ok: true }],
+          traces: [{ name: `Puter · ${result.model}`, summary: "selected free model · file refs + inline context · Bosses safety policy", ok: true }],
         });
         return;
       }
