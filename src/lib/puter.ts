@@ -1,5 +1,5 @@
 const PUTER_SRC = "https://js.puter.com/v2/";
-const AUTH_TIMEOUT_MS = 12_000;
+const PUTER_TIMEOUT_MS = 15_000;
 
 export type PuterUser = {
   uuid: string;
@@ -68,16 +68,20 @@ declare global {
 
 let loadPromise: Promise<PuterSDK> | null = null;
 
-function waitForAuth(timeoutMs = AUTH_TIMEOUT_MS): Promise<PuterSDK> {
+function isPuterReady(): boolean {
+  return Boolean(window.puter?.auth && window.puter?.ai?.chat && window.puter?.ai?.listModels);
+}
+
+function waitForPuter(timeoutMs = PUTER_TIMEOUT_MS): Promise<PuterSDK> {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     const tick = () => {
-      if (window.puter?.auth) {
-        resolve(window.puter);
+      if (isPuterReady()) {
+        resolve(window.puter!);
         return;
       }
       if (Date.now() - start > timeoutMs) {
-        reject(new Error("Puter loaded but authentication is not ready."));
+        reject(new Error("Puter AI is not ready yet. Please retry in a moment."));
         return;
       }
       window.setTimeout(tick, 40);
@@ -90,13 +94,13 @@ export function loadPuter(): Promise<PuterSDK> {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("Puter is only available in the browser."));
   }
-  if (window.puter?.auth) return Promise.resolve(window.puter);
+  if (isPuterReady()) return Promise.resolve(window.puter!);
   if (loadPromise) return loadPromise;
 
   loadPromise = new Promise((resolve, reject) => {
     const existing = document.querySelector<HTMLScriptElement>(`script[data-puter-sdk="v2"]`);
     const ready = () => {
-      waitForAuth()
+      waitForPuter()
         .then(resolve)
         .catch((err) => {
           loadPromise = null;
