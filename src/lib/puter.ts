@@ -40,10 +40,17 @@ type PuterFS = {
       progress?: (operationId: string, progress: number) => void;
     },
   ) => Promise<PuterFSItem | PuterFSItem[]>;
+  read?: (path: string) => Promise<Blob>;
+  write?: (path: string, data: string | Blob | File) => Promise<PuterFSItem>;
+  readdir?: (path: string) => Promise<PuterFSItem[]>;
+};
+
+type PuterNet = {
+  fetch: (url: string, options?: RequestInit) => Promise<Response>;
 };
 
 type PuterAIChat = (
-  prompt: string | Array<{ role: string; content: unknown }>,
+  prompt: string | Array<{ role: string; content: unknown; tool_call_id?: string; tool_calls?: unknown[] }>,
   options?: Record<string, unknown>,
 ) => Promise<unknown>;
 
@@ -57,6 +64,7 @@ export type PuterSDK = {
   auth: PuterAuthApi;
   kv?: PuterKvApi;
   fs?: PuterFS;
+  net?: PuterNet;
   ai: PuterAI;
 };
 
