@@ -1,4 +1,5 @@
 import { loadPuter, puterErrorMessage, type PuterSDK } from "@/lib/puter";
+import type { AttachedFile } from "@/lib/agent/types";
 
 export type PuterModel = {
   id: string;
@@ -10,9 +11,16 @@ export type PuterModel = {
   costs?: { prompt_tokens?: number; completion_tokens?: number; input?: number; output?: number };
 };
 
+export type PuterChatContent =
+  | string
+  | Array<
+      | { type: "text"; text: string }
+      | { type: "file"; puter_path: string }
+    >;
+
 export type PuterChatMessage = {
   role: "system" | "user" | "assistant" | "tool";
-  content: string;
+  content: PuterChatContent;
 };
 
 function getCost(model: PuterModel): { input: number; output: number } | null {
@@ -63,11 +71,29 @@ function contentText(value: unknown): string {
 export async function chatWithPuter(options: {
   messages: PuterChatMessage[];
   model?: string;
+  files?: AttachedFile[];
   onDelta?: (text: string) => void;
 }): Promise<{ text: string; model: string }> {
   const puter = await loadPuter();
   const model = options.model || PUTER_FREE_MODEL_FALLBACK;
-  const response = await puter.ai.chat(options.messages, {
+  const messages = options.messages.map((message) => ({ ...message }));
+  const files = (options.files ?? []).filter((file) => file.puterPath);
+  if (files.length) {
+    const lastUserIndex = [...messages].map((m) => m.role).lastIndexOf("user");
+    if (lastUserIndex >= 0) {
+      const last = messages[lastUserIndex];
+      const text = typeof last.content === "string" ? last.content : "Analyze the attached files.";
+      messages[lastUserIndex] = {
+        ...last,
+        content: [
+          ...files.map((file) => ({ type: "file" as const, puter_path: file.puterPath! })),
+          { type: "text" as const, text },
+        ],
+      };
+    }
+  }
+
+  const response = await puter.ai.chat(messages, {
     model,
     stream: Boolean(options.onDelta),
     normalize: true,
