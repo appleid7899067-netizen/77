@@ -39,23 +39,24 @@ export function ModelPicker({
         aria-label="AI provider"
         value={provider}
         onChange={(event) => onProviderChange(event.target.value as "puter" | "xai")}
-        className="h-8 max-w-[92px] rounded-full border border-border bg-secondary px-2 text-[11px] outline-none"
+        className="h-8 max-w-[110px] rounded-full border border-border bg-secondary px-2 text-[11px] outline-none"
       >
         <option value="puter">Puter · ฟรี</option>
         <option value="xai">xAI · server</option>
       </select>
       {provider === "puter" ? (
         <select
-          aria-label="Puter free model"
+          aria-label="เลือกโมเดล Puter ฟรี"
           value={model}
           onChange={(event) => onModelChange(event.target.value)}
           disabled={status === "loading"}
           className={cn(
-            "h-8 min-w-0 max-w-[190px] rounded-full border border-border bg-secondary px-2 text-[11px] outline-none",
+            "h-8 min-w-0 flex-1 rounded-full border border-border bg-secondary px-3 text-[11px] outline-none",
+            "hover:bg-accent/50 focus:ring-1 focus:ring-ring/40",
             status === "error" && "text-destructive",
           )}
         >
-          {status === "loading" ? <option>กำลังโหลดโมเดล…</option> : null}
+          {status === "loading" ? <option>กำลังโหลดโมเดล Puter…</option> : null}
           {status === "error" ? <option value="gemma-4-26b-a4b-it">โหลดรายการไม่สำเร็จ · Gemma 4 26B</option> : null}
           {models.map((item) => (
             <option key={`${item.provider}:${item.id}`} value={item.id}>
