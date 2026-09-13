@@ -1,4 +1,5 @@
 import { loadPuter, puterErrorMessage, type PuterSDK } from "@/lib/puter";
+import { executePuterTool, PUTER_AGENT_TOOLS, type PuterToolDefinition } from "@/lib/puter-tools";
 import type { AttachedFile } from "@/lib/agent/types";
 
 export type PuterModel = {
@@ -18,13 +19,22 @@ export type PuterChatContent =
       | { type: "file"; puter_path: string }
     >;
 
+export type PuterToolCall = {
+  id: string;
+  type?: "function";
+  function: { name: string; arguments: string };
+};
+
 export type PuterChatMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: PuterChatContent;
+  tool_call_id?: string;
+  tool_calls?: PuterToolCall[];
 };
 
 const MAX_HISTORY_MESSAGES = 48;
 const DEFAULT_MAX_OUTPUT_TOKENS = 16_384;
+const MAX_TOOL_ROUNDS = 5;
 
 function getCost(model: PuterModel): { input: number; output: number } | null {
   const cost = model.cost;
@@ -45,7 +55,10 @@ export function isFreePuterModel(model: PuterModel): boolean {
 }
 
 export function modelLabel(model: PuterModel): string {
-  const limits = [model.context ? `ctx ${model.context.toLocaleString()}` : "", model.max_tokens ? `out ${model.max_tokens.toLocaleString()}` : ""]
+  const limits = [
+    model.context ? `ctx ${model.context.toLocaleString()}` : "",
+    model.max_tokens ? `out ${model.max_tokens.toLocaleString()}` : "",
+  ]
     .filter(Boolean)
     .join(" · ");
   const base = model.name && model.name !== model.id ? `${model.name} · ${model.provider}` : `${model.id} · ${model.provider}`;
@@ -65,13 +78,11 @@ export async function listFreePuterModels(): Promise<PuterModel[]> {
     .slice(0, 80);
 }
 
-async function selectedModelInfo(modelId: string): Promise<PuterModel | undefined> {
-  try {
-    const models = await listFreePuterModels();
-    return models.find((item) => item.id === modelId);
-  } catch {
-    return undefined;
-  }
+async function resolveFreeModel(requestedModel: string | undefined): Promise<PuterModel> {
+  const models = await listFreePuterModels();
+  if (!models.length) throw new Error("Puter returned no free AI models available to this app.");
+  const selected = requestedModel ? models.find((item) => item.id === requestedModel) : undefined;
+  return selected ?? models[0];
 }
 
 function contentText(value: unknown): string {
@@ -87,18 +98,25 @@ function contentText(value: unknown): string {
   return "";
 }
 
+function toolCallsFromResponse(response: unknown): PuterToolCall[] {
+  const message = (response as { message?: { tool_calls?: unknown } })?.message;
+  return Array.isArray(message?.tool_calls) ? (message.tool_calls as PuterToolCall[]) : [];
+}
+
 export async function chatWithPuter(options: {
   messages: PuterChatMessage[];
   model?: string;
   files?: AttachedFile[];
   onDelta?: (text: string) => void;
-}): Promise<{ text: string; model: string }> {
+  enableTools?: boolean;
+  tools?: PuterToolDefinition[];
+}): Promise<{ text: string; model: string; toolCalls: string[] }> {
   const puter = await loadPuter();
-  const requestedModel = options.model || PUTER_FREE_MODEL_FALLBACK;
-  const modelInfo = await selectedModelInfo(requestedModel);
-  const model = modelInfo?.id || requestedModel;
+  const modelInfo = await resolveFreeModel(options.model);
+  const model = modelInfo.id;
   const messages = options.messages.slice(-MAX_HISTORY_MESSAGES).map((message) => ({ ...message }));
   const files = (options.files ?? []).filter((file) => file.puterPath);
+  const toolNames: string[] = [];
 
   if (files.length) {
     const lastUserIndex = [...messages].map((m) => m.role).lastIndexOf("user");
@@ -115,48 +133,78 @@ export async function chatWithPuter(options: {
     }
   }
 
-  const maxTokens = Math.min(modelInfo?.max_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_MAX_OUTPUT_TOKENS);
+  const maxTokens = Math.min(modelInfo.max_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_MAX_OUTPUT_TOKENS);
+  const tools = options.enableTools && !options.onDelta ? options.tools ?? PUTER_AGENT_TOOLS : undefined;
   const aiOptions: Record<string, unknown> = {
     model,
     stream: Boolean(options.onDelta),
     normalize: true,
     temperature: 0.2,
     max_tokens: maxTokens,
+    ...(tools?.length ? { tools } : {}),
   };
 
-  let response: unknown;
-  try {
-    response = await puter.ai.chat(messages, aiOptions);
-  } catch (firstError) {
-    // Some Puter model adapters reject optional generation-limit parameters.
-    // Retry the same selected model without max_tokens rather than switching models.
-    try {
-      const { max_tokens: _ignored, ...compatibleOptions } = aiOptions;
-      response = await puter.ai.chat(messages, compatibleOptions);
-    } catch {
-      throw firstError;
-    }
-  }
-
   let text = "";
-  if (response && typeof (response as AsyncIterable<unknown>)[Symbol.asyncIterator] === "function") {
-    for await (const chunk of response as AsyncIterable<unknown>) {
-      const delta = contentText((chunk as { text?: unknown; delta?: unknown; message?: { content?: unknown } }).text)
-        || contentText((chunk as { delta?: unknown }).delta)
-        || contentText((chunk as { message?: { content?: unknown } }).message?.content);
-      if (delta) {
-        text += delta;
-        options.onDelta?.(delta);
+  let currentMessages = messages;
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+    let response: unknown;
+    try {
+      response = await puter.ai.chat(currentMessages, aiOptions);
+    } catch (firstError) {
+      try {
+        const { max_tokens: _ignored, ...compatibleOptions } = aiOptions;
+        response = await puter.ai.chat(currentMessages, compatibleOptions);
+      } catch {
+        throw firstError;
       }
     }
-  } else {
-    const body = response as { message?: { content?: unknown }; text?: unknown };
-    text = contentText(body.message?.content) || contentText(body.text) || contentText(response);
-    if (text) options.onDelta?.(text);
+
+    if (response && typeof (response as AsyncIterable<unknown>)[Symbol.asyncIterator] === "function") {
+      for await (const chunk of response as AsyncIterable<unknown>) {
+        const part = chunk as { type?: string; text?: unknown; delta?: unknown; message?: { content?: unknown } };
+        if (part.type === "error") throw new Error(contentText(part.message));
+        const delta = contentText(part.text) || contentText(part.delta) || contentText(part.message?.content);
+        if (delta) {
+          text += delta;
+          options.onDelta?.(delta);
+        }
+      }
+      break;
+    }
+
+    const toolCalls = toolCallsFromResponse(response);
+    const body = response as { message?: { content?: unknown } };
+    const responseText = contentText(body.message?.content) || contentText(response);
+    if (responseText) text += responseText;
+
+    if (!toolCalls.length || !tools?.length) break;
+
+    currentMessages = [
+      ...currentMessages,
+      {
+        role: "assistant",
+        content: body.message?.content ? body.message.content : "",
+        tool_calls: toolCalls,
+      },
+    ];
+
+    for (const call of toolCalls) {
+      const name = call.function?.name;
+      toolNames.push(name);
+      let result: string;
+      try {
+        const args = JSON.parse(call.function?.arguments || "{}") as Record<string, unknown>;
+        result = await executePuterTool(puter, name, args);
+      } catch (error) {
+        result = JSON.stringify({ ok: false, error: puterErrorMessage(error) });
+      }
+      currentMessages.push({ role: "tool", tool_call_id: call.id, content: result });
+    }
   }
 
   if (!text.trim()) throw new Error("Puter returned an empty response.");
-  return { text: text.trim(), model };
+  return { text: text.trim(), model, toolCalls: toolNames };
 }
 
 export function puterAiErrorMessage(error: unknown): string {
@@ -169,4 +217,4 @@ export function isPuterAIReady(puter: PuterSDK | null): boolean {
   return Boolean(puter?.ai?.chat);
 }
 
-export const PUTER_FREE_MODEL_FALLBACK = "gemma-4-26b-a4b-it";
+export const PUTER_FREE_MODEL_FALLBACK = "";
