@@ -103,6 +103,27 @@ function toolCallsFromResponse(response: unknown): PuterToolCall[] {
   return Array.isArray(message?.tool_calls) ? (message.tool_calls as PuterToolCall[]) : [];
 }
 
+async function callPuter(puter: PuterSDK, messages: PuterChatMessage[], options: Record<string, unknown>): Promise<unknown> {
+  try {
+    return await puter.ai.chat(messages, options);
+  } catch (firstError) {
+    try {
+      const { max_tokens: _ignored, ...compatibleOptions } = options;
+      return await puter.ai.chat(messages, compatibleOptions);
+    } catch (secondError) {
+      if (options.tools) {
+        const { tools: _ignoredTools, ...noToolsOptions } = options;
+        try {
+          return await puter.ai.chat(messages, noToolsOptions);
+        } catch {
+          throw secondError;
+        }
+      }
+      throw firstError;
+    }
+  }
+}
+
 export async function chatWithPuter(options: {
   messages: PuterChatMessage[];
   model?: string;
@@ -148,17 +169,7 @@ export async function chatWithPuter(options: {
   let currentMessages = messages;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    let response: unknown;
-    try {
-      response = await puter.ai.chat(currentMessages, aiOptions);
-    } catch (firstError) {
-      try {
-        const { max_tokens: _ignored, ...compatibleOptions } = aiOptions;
-        response = await puter.ai.chat(currentMessages, compatibleOptions);
-      } catch {
-        throw firstError;
-      }
-    }
+    const response = await callPuter(puter, currentMessages, aiOptions);
 
     if (response && typeof (response as AsyncIterable<unknown>)[Symbol.asyncIterator] === "function") {
       for await (const chunk of response as AsyncIterable<unknown>) {
