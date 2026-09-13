@@ -57,7 +57,7 @@ export function ModelPicker({
           )}
         >
           {status === "loading" ? <option>กำลังโหลดโมเดล Puter…</option> : null}
-          {status === "error" ? <option value="gemma-4-26b-a4b-it">โหลดรายการไม่สำเร็จ · Gemma 4 26B</option> : null}
+          {status === "error" ? <option value="">โหลดรายการโมเดล Puter ไม่สำเร็จ · ลองใหม่</option> : null}
           {models.map((item) => (
             <option key={`${item.provider}:${item.id}`} value={item.id}>
               {modelLabel(item)}
