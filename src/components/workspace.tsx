@@ -67,6 +67,11 @@ export function Workspace() {
         .map((m) => ({ role: m.role, content: m.content }));
 
       if (aiProvider === "puter") {
+        const fileContext = files.length
+          ? `\n\nAttached files:\n${files
+              .map((file) => `FILE ${file.name} (${file.mimeType}, ${file.size} bytes)\n${file.text}`)
+              .join("\n\n---\n\n")}`
+          : "";
         const result = await chatWithPuter({
           model: puterModel,
           files,
@@ -74,10 +79,10 @@ export function Workspace() {
             {
               role: "system",
               content:
-                "You are the workspace AI. Use the selected Puter model. Analyze attached files directly through their Puter file references when provided. Use the files as authoritative source material. Never invent access to files that were not attached. For code, reason carefully and provide complete, production-ready solutions.",
+                "You are the workspace AI. Use the selected Puter model. Use attached files as authoritative source material. When a Puter file reference is available, inspect it directly; the inline file text is compatibility context. Never invent access to files that were not attached. For code, reason carefully and provide complete, production-ready solutions.",
             },
             ...history.slice(0, -1),
-            { role: "user", content: text || "Analyze the attached files and help me." },
+            { role: "user", content: `${text || "Analyze the attached files and help me."}${fileContext}` },
           ],
         });
         appendMessage(id, {
@@ -85,7 +90,7 @@ export function Workspace() {
           role: "assistant",
           content: result.text,
           createdAt: Date.now(),
-          traces: [{ name: `Puter · ${result.model}`, summary: "selected free model · max compatible context/output", ok: true }],
+          traces: [{ name: `Puter · ${result.model}`, summary: "selected free model · file refs + inline context", ok: true }],
         });
         return;
       }
