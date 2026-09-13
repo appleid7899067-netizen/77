@@ -22,6 +22,14 @@ Credential safety policy:
 - Never invent credentials and never claim a credential was installed, connected, tested, or used unless a real tool result confirms it.
 - If a credential is missing, preserve the current task and state exactly which service, operation, and secure connection field is required.
 - Public repository names, project IDs, account IDs, and service IDs are not secrets.
+
+Puter agent tools available when Agent is ON:
+- github_get_repo: read public GitHub repository metadata.
+- github_get_file: read public GitHub text files.
+- puter_read_file: read the signed-in user's Puter cloud file.
+- puter_list_files: list the signed-in user's Puter cloud directory.
+- puter_write_file: write a Puter cloud file only when the user explicitly asks for that write.
+Use tool results as evidence. Never claim a GitHub write, deployment, or external mutation occurred unless a real tool result confirms it.
 `;
 
 export function Workspace() {
@@ -105,7 +113,7 @@ export function Workspace() {
             {
               name: `Puter · ${result.model}`,
               summary: agentMode
-                ? "Bosses Plan → Act → Observe → Refine · selected model · file refs + inline context"
+                ? `Bosses Plan → Act → Observe → Refine · tools ${result.toolCalls.length ? result.toolCalls.join(", ") : "none"} · file refs + cloud workspace`
                 : "selected free model · file refs + inline context · Bosses safety policy",
               ok: true,
             },
@@ -217,13 +225,13 @@ export function Workspace() {
                 className={`shrink-0 rounded-md border px-3 py-2 text-xs font-medium transition ${
                   agentMode ? "border-foreground bg-foreground text-background" : "border-border bg-background text-foreground"
                 }`}
-                title="Use Bosses Plan → Act → Observe → Refine with the selected Puter model"
+                title="Use Bosses Plan → Act → Observe → Refine with Puter cloud and tools"
               >
                 Agent {agentMode ? "ON" : "OFF"}
               </button>
             ) : null}
           </div>
-          <Composer disabled={pending} onSend={(text, files) => void send(text, files)} onOpenPlugins={() => setPluginsOpen(true)} />
+          <Composer onSend={send} disabled={pending} />
         </main>
         <PluginsDialog open={pluginsOpen} onOpenChange={setPluginsOpen} />
       </div>
