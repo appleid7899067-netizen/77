@@ -63,14 +63,10 @@ export function Workspace() {
     try {
       const history = (useLumenStore.getState().conversations.find((c) => c.id === id)?.messages ?? [])
         .filter((m) => m.role === "user" || m.role === "assistant")
-        .slice(-16)
+        .slice(-48)
         .map((m) => ({ role: m.role, content: m.content }));
+
       if (aiProvider === "puter") {
-        const fileContext = files.length
-          ? `\n\nAttached files:\n${files
-              .map((file) => `FILE ${file.name} (${file.mimeType}, ${file.size} bytes)\n${file.text}`)
-              .join("\n\n---\n\n")}`
-          : "";
         const result = await chatWithPuter({
           model: puterModel,
           files,
@@ -78,10 +74,10 @@ export function Workspace() {
             {
               role: "system",
               content:
-                "You are a precise workspace AI. Answer in clear prose. Use attached files as source material. You may inspect file attachments supplied through Puter and should never claim to have accessed a file that was not attached.",
+                "You are the workspace AI. Use the selected Puter model. Analyze attached files directly through their Puter file references when provided. Use the files as authoritative source material. Never invent access to files that were not attached. For code, reason carefully and provide complete, production-ready solutions.",
             },
             ...history.slice(0, -1),
-            { role: "user", content: `${text}${fileContext}` },
+            { role: "user", content: text || "Analyze the attached files and help me." },
           ],
         });
         appendMessage(id, {
@@ -89,10 +85,11 @@ export function Workspace() {
           role: "assistant",
           content: result.text,
           createdAt: Date.now(),
-          traces: [{ name: `Puter · ${result.model}`, summary: "free model", ok: true }],
+          traces: [{ name: `Puter · ${result.model}`, summary: "selected free model · max compatible context/output", ok: true }],
         });
         return;
       }
+
       const result = await sendChat({
         data: {
           messages: history,
