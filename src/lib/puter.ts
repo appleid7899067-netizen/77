@@ -21,8 +21,29 @@ type PuterKvApi = {
   del: (key: string) => Promise<boolean | unknown>;
 };
 
+export type PuterFSItem = {
+  path: string;
+  name?: string;
+  size?: number;
+  uid?: string;
+  is_dir?: boolean;
+};
+
+type PuterFS = {
+  upload: (
+    items: FileList | File[],
+    dirPath?: string,
+    options?: {
+      overwrite?: boolean;
+      dedupeName?: boolean;
+      createMissingParents?: boolean;
+      progress?: (operationId: string, progress: number) => void;
+    },
+  ) => Promise<PuterFSItem | PuterFSItem[]>;
+};
+
 type PuterAIChat = (
-  prompt: string | Array<{ role: string; content: string }>,
+  prompt: string | Array<{ role: string; content: unknown }>,
   options?: Record<string, unknown>,
 ) => Promise<unknown>;
 
@@ -35,6 +56,7 @@ type PuterAI = {
 export type PuterSDK = {
   auth: PuterAuthApi;
   kv?: PuterKvApi;
+  fs?: PuterFS;
   ai: PuterAI;
 };
 
