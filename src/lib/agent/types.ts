@@ -5,6 +5,7 @@ export type AttachedFile = {
   mimeType: string;
   size: number;
   text: string;
+  puterPath?: string;
 };
 
 export type Artifact = {
